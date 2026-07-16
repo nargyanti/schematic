@@ -52,10 +52,12 @@ function rasterizeString(s: string, W: number, H: number, scale: number): Promis
   });
 }
 
-function pickScale(W: number): number {
+function pickScale(W: number, H: number): number {
+  const MAX = 4200;
   let s = 2;
-  if (W * s > 4200) s = 4200 / W;
-  return Math.max(1, s);
+  if (W * s > MAX) s = MAX / W;
+  if (H * s > MAX) s = Math.min(s, MAX / H);
+  return Math.max(0.2, s);
 }
 
 // ── A4 per-domain PDF export ──────────────────────────────────────────────
@@ -198,7 +200,7 @@ async function exportA4(): Promise<void> {
       busy.textContent = `Rendering ${g.title}…`;
       await new Promise((r) => setTimeout(r, 10));
       if (a4opts.fit === "page") {
-        const cv = await rasterizeString(s, W, H, pickScale(W));
+        const cv = await rasterizeString(s, W, H, pickScale(W, H));
         newPage(orient);
         a4Chrome(pdf!, g, count, PW, mL, mR, mT, "");
         const fit = Math.min(cw / W, ch / H),
@@ -254,13 +256,13 @@ export function initExport(): void {
   document.getElementById("btnPng")!.onclick = async () => {
     if (!hasTables()) return;
     const { s, W, H } = contentSVGString();
-    const cv = await rasterizeString(s, W, H, pickScale(W));
+    const cv = await rasterizeString(s, W, H, pickScale(W, H));
     cv.toBlob((b) => dl("erd.png", b!), "image/png");
   };
   document.getElementById("btnPdf")!.onclick = async () => {
     if (!hasTables()) return;
     const { s, W, H } = contentSVGString();
-    const cv = await rasterizeString(s, W, H, pickScale(W));
+    const cv = await rasterizeString(s, W, H, pickScale(W, H));
     const pdf = new jsPDF({ orientation: W >= H ? "l" : "p", unit: "pt", format: [W + 40, H + 40] });
     pdf.setFillColor(243, 241, 234);
     pdf.rect(0, 0, W + 40, H + 40, "F");

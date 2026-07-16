@@ -13,6 +13,9 @@ function detectSections(src: string): { map: Record<string, string>; groups: Gro
     let m = line.match(secRe);
     if (m) {
       const title = m[2].replace(/[─—\-\s]+$/, "").trim();
+      // Skip legend/index lines that list multiple "[n] Title" pairs on one line —
+      // those aren't real section headers, just documentation above the real ones.
+      if (/\[\w+\]/.test(title)) return;
       cur = { id: "g" + groups.length, title, color: GROUP_COLORS[ci++ % GROUP_COLORS.length] };
       groups.push(cur);
       return;
