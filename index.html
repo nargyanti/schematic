@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="description" content="Turn DBML into a clean, domain-grouped ERD in your browser. Text-first, AI-friendly, export to SVG/PNG/PDF.">
+<title>Schematic — DBML ERD</title>
+</head>
+<body>
+<div id="app">
+  <header>
+    <div class="brand"><span class="dot"></span><b>Schematic</b><span>dbml · erd</span></div>
+    <div class="sp"></div>
+    <button class="btn" id="btnFit">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4h6v6H4zM14 14h6v6h-6zM14 4h6v6h-6zM4 14h6v6H4z"/></svg>Arrange
+    </button>
+    <div class="divider"></div>
+    <div class="group">
+      <button class="btn" id="btnSvg">SVG</button>
+      <button class="btn" id="btnPng">PNG</button>
+      <button class="btn primary" id="btnPdf">PDF</button>
+      <button class="btn a4" id="btnA4" title="Export A4 PDF per domain">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 10h18"/></svg>A4 ▾
+      </button>
+      <div class="a4pop" id="a4Panel">
+        <div class="lab">Orientation</div>
+        <div class="seg" data-key="orient"><button data-val="auto" class="on">Auto</button><button data-val="landscape">Landscape</button><button data-val="portrait">Portrait</button></div>
+        <div class="lab">Fit to page</div>
+        <div class="seg" data-key="fit"><button data-val="page" class="on">1 page</button><button data-val="tile">Readable (tiled)</button></div>
+        <div class="readRow" id="a4ReadRow" style="opacity:.4"><span>Readability</span><input type="range" id="a4Read" min="50" max="130" value="80"></div>
+        <button class="go" id="btnA4Go">Export A4 PDF</button>
+      </div>
+    </div>
+  </header>
+
+  <div id="body">
+    <section id="editorPane">
+      <div class="paneHead">
+        <span class="tag">DBML Schema</span><span class="sp"></span>
+        <button class="mini" id="btnOpen">open file</button>
+        <button class="mini" id="btnSample">sample</button>
+        <button class="mini" id="btnClear">clear</button>
+      </div>
+      <textarea id="editor" spellcheck="false" placeholder="Paste DBML here, or drop a .dbml file…"></textarea>
+      <div id="err"></div>
+    </section>
+
+    <div id="handle"></div>
+
+    <section id="canvasPane">
+      <svg id="svg" xmlns="http://www.w3.org/2000/svg"></svg>
+
+      <div class="ctrl">
+        <div class="chip"><label>Layout</label><select id="mode"><option value="domain">By domain</option><option value="flat">Flat</option></select></div>
+        <div class="chip"><label>Density</label><input type="range" id="spacing" min="10" max="100" value="55"></div>
+        <button class="chip" id="btnDomain">Domain ▾</button>
+        <button class="chip" id="btnEnum">Enum ▾</button>
+        <label class="chip toggle"><input type="checkbox" id="hubToggle" checked> Dim hubs</label>
+        <label class="chip toggle"><input type="checkbox" id="keyToggle"> PK/FK only</label>
+        <div class="chip"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#7a8199" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4-4"/></svg><input id="search" placeholder="find table…"></div>
+        <div class="chip"><button id="btnSaveLayout">⭳ layout</button><span style="color:#c9cfdd">·</span><button id="btnLoadLayout">⭱ layout</button></div>
+      </div>
+      <div class="panel" id="domainPanel"><div class="dpHead"><button id="dpAll">All</button><button id="dpNone">None</button></div><div id="dpList"></div></div>
+      <div class="panel" id="enumPanel"><div class="panelTitle">Enum</div><div id="enumList"></div></div>
+
+      <button id="focusChip"></button>
+      <div class="stat" id="stat"></div>
+      <div class="hud"><button id="zOut">−</button><span class="z" id="zLbl">100%</span><button id="zIn">+</button><button id="zReset" title="Fit to screen">⤢</button></div>
+      <div id="busy">Preparing PDF…</div>
+    </section>
+  </div>
+</div>
+<input type="file" id="fileDbml" accept=".dbml,.txt,text/plain" style="display:none">
+<input type="file" id="fileLayout" accept=".json,application/json" style="display:none">
+
+<script type="module" src="/src/main.ts"></script>
+</body>
+</html>
