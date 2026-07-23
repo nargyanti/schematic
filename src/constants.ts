@@ -43,6 +43,7 @@ export const LEGACY_TABLES = new Set<string>([]);
 
 // Typography + table geometry.
 export const NAME_FONT = "650 13px Inter, sans-serif";
+export const ROLE_FONT = "700 8px Inter, sans-serif";
 export const COL_FONT = "12px monospace";
 export const TYPE_FONT = "11.5px monospace";
 export const HEAD_H = 34;

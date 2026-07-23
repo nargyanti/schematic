@@ -29,6 +29,23 @@ export interface Ref {
   to: RefEndpoint;
   /** Relationship symbol as written in DBML: ">", "<", "-", "<>". */
   sym: string;
+  /** True for relationships guessed from naming convention, not declared in DBML. */
+  inferred?: boolean;
+  /** Guess strength: "strong" = `*_id` column, "weak" = bare name match. */
+  conf?: "strong" | "weak";
+}
+
+/** How a table behaves in the graph, derived from its FK degrees. */
+export type Role = "master" | "trx" | "pivot" | "orphan";
+
+export interface TableMetric {
+  /** Distinct columns of this table that are a declared FK. */
+  out: number;
+  /** Distinct other tables that declare a FK to this table. */
+  in: number;
+  /** Distinct other tables that reach this table only by naming convention. */
+  softIn: number;
+  role: Role;
 }
 
 export interface Group {

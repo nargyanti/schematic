@@ -1,4 +1,5 @@
-import { BADGE, COL_FONT, GAP, HEAD_H, NAME_FONT, PAD_X, ROW_H, TYPE_FONT } from "./constants";
+import { BADGE, COL_FONT, GAP, HEAD_H, NAME_FONT, PAD_X, ROLE_FONT, ROW_H, TYPE_FONT } from "./constants";
+import { ROLE_LABEL } from "./metrics";
 import { state } from "./state";
 import type { Column, EdgeGeometry, Point, Ref, Table } from "./types";
 
@@ -26,10 +27,16 @@ export function visCols(t: Table): Column[] {
   return t.columns;
 }
 
+// Width of the MASTER/TRX/PIVOT/ORPHAN pill drawn in the table header.
+export function roleBadgeW(t: Table): number {
+  const m = state.metrics[t.name];
+  return m ? Math.ceil(textW(ROLE_LABEL[m.role], ROLE_FONT)) + 12 : 0;
+}
+
 // Compute width/height for a table based on its visible columns.
 export function sizeTable(t: Table): void {
   const vc = visCols(t);
-  let w = textW(t.name, NAME_FONT) + PAD_X * 2 + 30 + (t.legacy ? 50 : 0);
+  let w = textW(t.name, NAME_FONT) + PAD_X * 2 + 30 + (t.legacy ? 50 : 0) + roleBadgeW(t) + 8;
   vc.forEach((c) => {
     const b = (c.pk ? BADGE : 0) + (c.fk ? BADGE : 0) + (c.note ? 8 : 0);
     const cw = textW(c.name, COL_FONT) + textW(c.type || "", TYPE_FONT) + GAP + PAD_X * 2 + b + 8;

@@ -1,28 +1,21 @@
 import { dl } from "./export";
-import { buildDomainPanel } from "./panels";
+import { relayout } from "./layout";
+import { updateFilterBadge, updateStat } from "./panels";
+import { applySnapshot, snapshot } from "./persist";
 import { renderContent } from "./render";
 import { state } from "./state";
 import { update } from "./update";
-import { fitView } from "./view";
+import { applyView, fitView } from "./view";
 
-// Save/load table positions + view options as JSON, and open/drop .dbml files.
+// Save/load the session snapshot as JSON, and open/drop .dbml files.
+// (The same snapshot is also written to localStorage automatically — this is
+// the portable copy, for moving a session between machines.)
 export function initIO(): void {
   const editor = document.getElementById("editor") as HTMLTextAreaElement;
-  const spacing = document.getElementById("spacing") as HTMLInputElement;
-  const modeSel = document.getElementById("mode") as HTMLSelectElement;
 
   // ── Save layout ──
   document.getElementById("btnSaveLayout")!.onclick = () => {
-    const data = {
-      v: 1,
-      pos: state.pos,
-      collapsed: [...state.collapsed],
-      activeGroups: [...state.activeGroups],
-      mode: modeSel.value,
-      spacing: +spacing.value,
-      hideNonKey: state.hideNonKey,
-    };
-    dl("erd-layout.json", new Blob([JSON.stringify(data)], { type: "application/json" }));
+    dl("erd-layout.json", new Blob([JSON.stringify(snapshot())], { type: "application/json" }));
   };
 
   // ── Load layout ──
@@ -34,22 +27,16 @@ export function initIO(): void {
     const rd = new FileReader();
     rd.onload = () => {
       try {
-        const d = JSON.parse(rd.result as string);
-        if (d.mode) modeSel.value = d.mode;
-        if (d.spacing) spacing.value = d.spacing;
-        if (typeof d.hideNonKey === "boolean") {
-          state.hideNonKey = d.hideNonKey;
-          (document.getElementById("keyToggle") as HTMLInputElement).checked = state.hideNonKey;
-        }
-        if (d.activeGroups) {
-          state.activeGroups = new Set(d.activeGroups);
-          buildDomainPanel();
-        }
-        state.collapsed.clear();
-        (d.collapsed || []).forEach((n: string) => state.collapsed.add(n));
-        if (d.pos) state.pos = { ...state.pos, ...d.pos };
+        const restored = applySnapshot(JSON.parse(rd.result as string));
+        relayout();
+        if (restored.pos) Object.assign(state.pos, restored.pos);
         renderContent();
-        fitView();
+        updateStat();
+        updateFilterBadge();
+        if (restored.view) {
+          Object.assign(state.view, restored.view);
+          applyView();
+        } else fitView();
       } catch (err) {
         alert("Invalid layout file: " + (err as Error).message);
       }

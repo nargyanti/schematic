@@ -6,15 +6,20 @@ import {
   headPath,
   lighten,
   markEl,
+  roleBadgeW,
   sizeTable,
   textW,
   visCols,
 } from "./geometry";
-import { isHubEdge, state, visRefs, visTables } from "./state";
-import type { Point, Table } from "./types";
+import { ROLE_LABEL } from "./metrics";
+import { isHubEdge, neighborhood, state, visRefs, visTables, type AuditMark } from "./state";
+import type { Point, Ref, Table } from "./types";
 
 const svg = () => document.getElementById("svg") as unknown as SVGSVGElement;
 const modeVal = () => (document.getElementById("mode") as HTMLSelectElement).value;
+
+/** Cycle order for the right-click audit mark. */
+const AUDIT_CYCLE: Array<AuditMark | undefined> = ["done", "warn", "skip", undefined];
 
 // Build the persistent SVG shell: grid pattern + viewport/content groups.
 export function buildShell(): void {
@@ -31,11 +36,19 @@ export function buildShell(): void {
   s.appendChild(vp);
 }
 
+/** CSS classes for one edge, distinguishing declared FKs from inferred guesses. */
+function edgeClass(r: Ref): string {
+  if (r.inferred) return "edge soft" + (r.conf === "weak" ? " weak" : "");
+  return "edge" + (isHubEdge(r) ? " hub" : "");
+}
+
 // Draw one table node as an SVG group.
 export function makeTableEl(t: Table, p: Point): SVGElement {
   sizeTable(t);
   const col = t.group ? groupColor(t.group) : "#2b3a5c";
-  const g = el("g", { transform: `translate(${p.x},${p.y})`, "data-table": t.name }, "grp" + (t.legacy ? " legacy" : ""));
+  const mark = state.audit[t.name];
+  const cls = "grp" + (t.legacy ? " legacy" : "") + (mark ? " audit-" + mark : "");
+  const g = el("g", { transform: `translate(${p.x},${p.y})`, "data-table": t.name }, cls);
   g.appendChild(el("rect", { x: 2, y: 3, rx: 9, width: t.width!, height: t.height! }, "tbl-shadow"));
   g.appendChild(el("rect", { x: 0, y: 0, rx: 9, width: t.width!, height: t.height! }, "tbl-body" + (t.legacy ? " legacy-body" : "")));
   g.appendChild(el("path", { d: headPath(t.width!), fill: col }));
@@ -51,16 +64,32 @@ export function makeTableEl(t: Table, p: Point): SVGElement {
     g.appendChild(lt);
     rightX = t.width! - PAD_X - bw - 8;
   }
+  // Role pill: MASTER / TRX / PIVOT / ORPHAN, derived from FK degrees.
+  const met = state.metrics[t.name];
+  if (met) {
+    const bw = roleBadgeW(t);
+    g.appendChild(el("rect", { x: rightX - bw, y: HEAD_H / 2 - 8, rx: 4, width: bw, height: 16 }, "role-pill"));
+    const rt = el("text", { x: rightX - bw / 2, y: HEAD_H / 2 + 3, "text-anchor": "middle" }, "role-txt");
+    rt.textContent = ROLE_LABEL[met.role];
+    g.appendChild(rt);
+    const ti = el("title");
+    ti.textContent = `${ROLE_LABEL[met.role]} — FK out ${met.out}, FK in ${met.in}` + (met.softIn ? `, inferred in ${met.softIn}` : "");
+    rt.appendChild(ti);
+    rightX -= bw + 8;
+  }
   if (t.note) {
     g.appendChild(el("circle", { cx: rightX, cy: HEAD_H / 2, r: 3 }, "note-dot"));
     const ti = el("title");
     ti.textContent = t.note;
     g.appendChild(ti);
   }
+  const q = state.colQuery;
   const vc = visCols(t);
   vc.forEach((c, i) => {
     const y = HEAD_H + i * ROW_H;
     if (i > 0) g.appendChild(el("line", { x1: 0, y1: y, x2: t.width!, y2: y }, "col-sep"));
+    if (q && c.name.toLowerCase().includes(q))
+      g.appendChild(el("rect", { x: 1, y: y + 1, width: t.width! - 2, height: ROW_H - 2 }, "row-match"));
     const hit = el("rect", { x: 0, y: y, width: t.width!, height: ROW_H }, "row-hit");
     if (c.note) {
       const ti = el("title");
@@ -102,6 +131,8 @@ export function makeTableEl(t: Table, p: Point): SVGElement {
     ci.textContent = "▸ " + t.columns.length + " cols";
     g.appendChild(ci);
   }
+  // Audit stripe last so it stays on top of the header fill.
+  if (mark) g.appendChild(el("rect", { x: 0, y: 0, rx: 2, width: 4, height: t.height! }, "audit-bar " + mark));
   return g;
 }
 
@@ -134,9 +165,8 @@ export function renderContent(): void {
     nodeLayer.appendChild(g);
   });
   visRefs().forEach((r) => {
-    const idx = state.model.refs.indexOf(r);
-    const hub = isHubEdge(r);
-    const path = el("path", { "data-ef": r.from.table, "data-et": r.to.table }, "edge" + (hub ? " hub" : ""));
+    const idx = state.edges.indexOf(r);
+    const path = el("path", { "data-ef": r.from.table, "data-et": r.to.table }, edgeClass(r));
     (path as SVGElement & { dataset: DOMStringMap }).dataset.ei = String(idx);
     edgeLayer.appendChild(path);
   });
@@ -148,7 +178,7 @@ export function renderContent(): void {
 
 export function routeEdges(): void {
   document.querySelectorAll<SVGPathElement>(".edge").forEach((path) => {
-    const r = state.model.refs[+path.dataset.ei!];
+    const r = state.edges[+path.dataset.ei!];
     if (!r) return;
     const g = edgeGeom(r, state.pos, state.tableByName);
     if (!g) return;
@@ -158,11 +188,14 @@ export function routeEdges(): void {
       if (old) old.remove();
     });
     const hub = path.classList.contains("hub") ? " hub" : "",
-      hide = path.classList.contains("hide") ? " hide" : "";
-    const mf = markEl(g.A, g.aS, r.sym, "from", hub + hide);
+      hide = path.classList.contains("hide") ? " hide" : "",
+      soft = path.classList.contains("soft") ? " soft" : "",
+      weak = path.classList.contains("weak") ? " weak" : "";
+    const extra = hub + hide + soft + weak;
+    const mf = markEl(g.A, g.aS, r.sym, "from", extra);
     mf.setAttribute("data-mk", path.dataset.ei + "-from");
     path.parentNode!.appendChild(mf);
-    const mt = markEl(g.B, g.bS, r.sym, "to", hub + hide);
+    const mt = markEl(g.B, g.bS, r.sym, "to", extra);
     mt.setAttribute("data-mk", path.dataset.ei + "-to");
     path.parentNode!.appendChild(mt);
   });
@@ -172,6 +205,14 @@ export function applyHubVisibility(): void {
   const hide = (document.getElementById("hubToggle") as HTMLInputElement).checked && modeVal() === "domain";
   document.querySelectorAll(".edge.hub").forEach((e) => e.classList.toggle("hide", hide));
   document.querySelectorAll(".edge-mark.hub").forEach((e) => e.classList.toggle("hide", hide));
+}
+
+/** Advance a table's audit mark one step through the cycle. */
+export function cycleAudit(name: string): void {
+  const cur = state.audit[name];
+  const next = AUDIT_CYCLE[(AUDIT_CYCLE.indexOf(cur) + 1) % AUDIT_CYCLE.length];
+  if (next) state.audit[name] = next;
+  else delete state.audit[name];
 }
 
 function bindDrag(): void {
@@ -185,6 +226,7 @@ function bindDrag(): void {
     g.addEventListener("pointerdown", (e) => {
       e.stopPropagation();
       name = g.dataset.table!;
+      if (!state.pos[name]) return;
       moved = false;
       sx = e.clientX;
       sy = e.clientY;
@@ -204,6 +246,7 @@ function bindDrag(): void {
         g.removeEventListener("pointermove", move);
         g.removeEventListener("pointerup", up);
         if (!moved) setFocus(name);
+        else onLayoutChange();
       };
       g.addEventListener("pointermove", move);
       g.addEventListener("pointerup", up);
@@ -214,11 +257,27 @@ function bindDrag(): void {
       if (state.collapsed.has(n)) state.collapsed.delete(n);
       else state.collapsed.add(n);
       renderContent();
+      onLayoutChange();
+    });
+    g.addEventListener("contextmenu", (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      cycleAudit(g.dataset.table!);
+      onAuditChange();
     });
     g.addEventListener("pointerenter", () => hl(g.dataset.table!, true));
     g.addEventListener("pointerleave", () => hl(g.dataset.table!, false));
   });
 }
+
+// Wired up by main.ts — kept as hooks so render.ts stays free of persistence
+// and panel dependencies (which would import back into render.ts).
+export const hooks = {
+  layoutChanged: () => {},
+  auditChanged: () => {},
+};
+const onLayoutChange = () => hooks.layoutChanged();
+const onAuditChange = () => hooks.auditChanged();
 
 function hl(name: string, on: boolean): void {
   document.querySelectorAll<SVGPathElement>(".edge").forEach((p) => {
@@ -241,21 +300,20 @@ export function applyFocus(): void {
   const chip = document.getElementById("focusChip")!;
   if (!state.focusTable) {
     document.querySelectorAll(".dim,.focused").forEach((e) => e.classList.remove("dim", "focused"));
-    chip.style.display = "none";
+    chip.classList.add("hidden");
+    chip.classList.remove("flex");
     return;
   }
-  const conn = new Set([state.focusTable]);
-  state.model.refs.forEach((r) => {
-    if (r.from.table === state.focusTable) conn.add(r.to.table);
-    if (r.to.table === state.focusTable) conn.add(r.from.table);
-  });
+  const conn = neighborhood(state.focusTable, state.focusHops);
   document.querySelectorAll<SVGGElement>(".grp").forEach((g) => {
     const n = g.dataset.table!;
     g.classList.toggle("dim", !conn.has(n));
     g.classList.toggle("focused", n === state.focusTable);
   });
   document.querySelectorAll<SVGPathElement>(".edge").forEach((p) => {
-    const on = p.dataset.ef === state.focusTable || p.dataset.et === state.focusTable;
+    // An edge stays lit when both ends are inside the neighborhood — that is
+    // what makes hops 2–3 show a connected sub-graph rather than a lone star.
+    const on = conn.has(p.dataset.ef!) && conn.has(p.dataset.et!);
     p.classList.toggle("dim", !on);
     ["from", "to"].forEach((e) => {
       const m = document.querySelector(`[data-mk="${p.dataset.ei}-${e}"]`);
@@ -263,6 +321,11 @@ export function applyFocus(): void {
     });
   });
   document.querySelectorAll(".grp-box").forEach((b) => b.classList.add("dim"));
-  chip.textContent = "Focus: " + state.focusTable + "   ✕";
-  chip.style.display = "";
+  document.getElementById("focusName")!.textContent =
+    "Focus: " + state.focusTable + (state.focusHops > 1 ? ` · ${conn.size} tabel` : "");
+  document.querySelectorAll<HTMLButtonElement>("#hopSeg button").forEach((b) => {
+    b.classList.toggle("bg-white/30", +b.dataset.h! === state.focusHops);
+  });
+  chip.classList.remove("hidden");
+  chip.classList.add("flex");
 }

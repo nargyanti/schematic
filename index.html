@@ -7,19 +7,23 @@
 <title>Schematic — DBML ERD</title>
 </head>
 <body>
-<div id="app">
-  <header>
-    <div class="brand"><span class="dot"></span><b>Schematic</b><span>dbml · erd</span></div>
-    <div class="sp"></div>
+<div id="app" class="flex h-full flex-col">
+  <header class="z-20 flex h-[52px] shrink-0 items-center gap-2.5 border-b border-line bg-ink px-3.5">
+    <div class="flex select-none items-baseline gap-[9px]">
+      <span class="size-[9px] self-center rotate-45 rounded-sm bg-accent"></span>
+      <b class="text-[15px] font-semibold tracking-[-.01em] text-txt">Schematic</b>
+      <span class="font-mono text-[11px] text-muted">dbml · erd</span>
+    </div>
+    <div class="flex-1"></div>
     <button class="btn" id="btnFit">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4h6v6H4zM14 14h6v6h-6zM14 4h6v6h-6zM4 14h6v6H4z"/></svg>Arrange
     </button>
-    <div class="divider"></div>
-    <div class="group">
+    <div class="h-[22px] w-px bg-line"></div>
+    <div class="relative flex gap-1.5">
       <button class="btn" id="btnSvg">SVG</button>
       <button class="btn" id="btnPng">PNG</button>
-      <button class="btn primary" id="btnPdf">PDF</button>
-      <button class="btn a4" id="btnA4" title="Export A4 PDF per domain">
+      <button class="btn btn-primary" id="btnPdf">PDF</button>
+      <button class="btn btn-a4" id="btnA4" title="Export A4 PDF per domain">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 10h18"/></svg>A4 ▾
       </button>
       <div class="a4pop" id="a4Panel">
@@ -27,51 +31,120 @@
         <div class="seg" data-key="orient"><button data-val="auto" class="on">Auto</button><button data-val="landscape">Landscape</button><button data-val="portrait">Portrait</button></div>
         <div class="lab">Fit to page</div>
         <div class="seg" data-key="fit"><button data-val="page" class="on">1 page</button><button data-val="tile">Readable (tiled)</button></div>
-        <div class="readRow" id="a4ReadRow" style="opacity:.4"><span>Readability</span><input type="range" id="a4Read" min="50" max="130" value="80"></div>
+        <div class="read-row opacity-40" id="a4ReadRow"><span>Readability</span><input type="range" id="a4Read" min="50" max="130" value="80"></div>
         <button class="go" id="btnA4Go">Export A4 PDF</button>
       </div>
     </div>
   </header>
 
-  <div id="body">
-    <section id="editorPane">
-      <div class="paneHead">
-        <span class="tag">DBML Schema</span><span class="sp"></span>
+  <div id="body" class="flex min-h-0 flex-1">
+    <section id="editorPane" class="flex w-1/3 min-w-[200px] max-w-[600px] flex-col border-r border-line bg-ink">
+      <div class="flex shrink-0 items-center gap-2 border-b border-line px-3.5 py-[9px]">
+        <span class="font-mono text-[10.5px] uppercase tracking-[.08em] text-muted">DBML Schema</span>
+        <span class="flex-1"></span>
         <button class="mini" id="btnOpen">open file</button>
         <button class="mini" id="btnSample">sample</button>
         <button class="mini" id="btnClear">clear</button>
+        <span class="h-3 w-px bg-line"></span>
+        <button class="mini" id="btnSaveLayout" title="Export this session (positions, filters, audit marks) as JSON">⭳ session</button>
+        <button class="mini" id="btnLoadLayout" title="Import a session from JSON">⭱ session</button>
       </div>
-      <textarea id="editor" spellcheck="false" placeholder="Paste DBML here, or drop a .dbml file…"></textarea>
-      <div id="err"></div>
+      <textarea id="editor" spellcheck="false" placeholder="Paste DBML here, or drop a .dbml file…"
+        class="flex-1 resize-none overflow-auto whitespace-pre border-none bg-ink px-4 py-3.5 font-mono text-[13px] leading-[1.7] text-[#cdd6ea] outline-none tab-2"></textarea>
+      <div id="err" class="border-t border-[#4a2a2a] bg-[#2a1a1a] px-4 py-2 font-mono text-[11.5px] text-[#ff9d8a]"></div>
     </section>
 
-    <div id="handle"></div>
+    <div id="handle" class="relative z-5 w-1.5 shrink-0 cursor-col-resize"></div>
 
-    <section id="canvasPane">
-      <svg id="svg" xmlns="http://www.w3.org/2000/svg"></svg>
+    <section id="canvasPane" class="relative min-w-0 flex-1 overflow-hidden bg-paper">
+      <svg id="svg" xmlns="http://www.w3.org/2000/svg" class="block h-full w-full cursor-grab touch-none"></svg>
 
-      <div class="ctrl">
+      <div id="ctrl" class="absolute left-3.5 top-3.5 z-15 flex max-w-[calc(100%-28px)] flex-wrap items-center gap-2">
         <div class="chip"><label>Layout</label><select id="mode"><option value="domain">By domain</option><option value="flat">Flat</option></select></div>
-        <div class="chip"><label>Density</label><input type="range" id="spacing" min="10" max="100" value="55"></div>
+        <div class="chip"><label>Density</label><input type="range" id="spacing" min="10" max="100" value="55" class="w-20"></div>
         <button class="chip" id="btnDomain">Domain ▾</button>
+        <button class="chip" id="btnFilter">Filter ▾<span id="filterBadge" class="ml-1 hidden rounded-full bg-accent px-1.5 py-px font-mono text-[10px] text-white"></span></button>
         <button class="chip" id="btnEnum">Enum ▾</button>
-        <label class="chip toggle"><input type="checkbox" id="hubToggle" checked> Dim hubs</label>
-        <label class="chip toggle"><input type="checkbox" id="keyToggle"> PK/FK only</label>
-        <div class="chip"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#7a8199" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4-4"/></svg><input id="search" placeholder="find table…"></div>
-        <div class="chip"><button id="btnSaveLayout">⭳ layout</button><span style="color:#c9cfdd">·</span><button id="btnLoadLayout">⭱ layout</button></div>
+        <label class="chip chip-toggle" title="Fade edges touching high-degree hub tables"><input type="checkbox" id="hubToggle" checked> Hubs</label>
+        <label class="chip chip-toggle" title="Show only PK and FK columns"><input type="checkbox" id="keyToggle"> Keys</label>
+        <div class="chip">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#7a8199" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4-4"/></svg>
+          <input id="search" placeholder="table or column…" class="w-28 border-none bg-transparent font-sans text-xs text-[#28324d] outline-none">
+          <span id="searchCount" class="font-mono text-[10.5px] text-[#98a0b6]"></span>
+        </div>
       </div>
-      <div class="panel" id="domainPanel"><div class="dpHead"><button id="dpAll">All</button><button id="dpNone">None</button></div><div id="dpList"></div></div>
-      <div class="panel" id="enumPanel"><div class="panelTitle">Enum</div><div id="enumList"></div></div>
 
-      <button id="focusChip"></button>
-      <div class="stat" id="stat"></div>
-      <div class="hud"><button id="zOut">−</button><span class="z" id="zLbl">100%</span><button id="zIn">+</button><button id="zReset" title="Fit to screen">⤢</button></div>
-      <div id="busy">Preparing PDF…</div>
+      <div class="panel left-3.5 top-14" id="domainPanel">
+        <div class="dp-head"><button id="dpAll">All</button><button id="dpNone">None</button></div>
+        <div id="dpList"></div>
+      </div>
+
+      <div class="panel left-3.5 top-14 w-82.5" id="filterPanel">
+        <div class="panel-title">Foreign keys</div>
+        <div class="preset-row">
+          <button data-preset="master" title="Referenced at least once, references nobody — pure lookup tables">master</button>
+          <button data-preset="unref" title="Nothing in the schema points here">unreferenced</button>
+          <button data-preset="config" title="Unreferenced and barely referencing — settings and parameters that only code reads">config</button>
+          <button data-preset="trx" title="Tables that reference other tables">transactional</button>
+        </div>
+        <div class="range-row">
+          <div class="lab"><b>FK out</b><span id="fkOutLbl">0 – 0</span></div>
+          <div class="pair"><input type="range" id="fkOutMin" min="0" max="0" value="0"><input type="range" id="fkOutMax" min="0" max="0" value="0"></div>
+          <div class="lab"><span>FK columns it owns — higher means more transactional</span></div>
+        </div>
+        <div class="range-row">
+          <div class="lab"><b>FK in</b><span id="fkInLbl">0 – 0</span></div>
+          <div class="pair"><input type="range" id="fkInMin" min="0" max="0" value="0"><input type="range" id="fkInMax" min="0" max="0" value="0"></div>
+          <div class="lab"><span>tables pointing at it — higher means more master</span></div>
+        </div>
+
+        <div class="panel-sep"></div>
+        <div class="panel-title">Role</div>
+        <div id="roleList"></div>
+
+        <div class="panel-sep"></div>
+        <div class="panel-title">Audit</div>
+        <label class="role-row"><input type="checkbox" id="auditHide"><span>Hide tables marked done</span><span class="cnt" id="auditCount">0</span></label>
+        <div class="soft-row">Right-click a table to mark it: ✓ done → ⚠ check → — ignore</div>
+        <button id="auditReset" class="mt-1 w-full cursor-pointer rounded-md border border-[#e2e4ec] bg-[#f1f2f6] p-1.25 font-mono text-[11px] text-[#4a5675] hover:bg-[#e8eaf2]">clear all audit marks</button>
+
+        <div class="panel-sep"></div>
+        <div class="panel-title">Inferred relationships</div>
+        <label class="role-row"><input type="checkbox" id="softToggle"><span>Show inferred edges</span><span class="cnt" id="softCount">0</span></label>
+        <div class="soft-row">Columns that point at another table by name instead of a foreign key — e.g. seed_class → seed_classes.</div>
+        <div id="softList" class="mt-1 max-h-60 overflow-auto"></div>
+
+        <div class="panel-sep"></div>
+        <button id="filterReset" class="w-full cursor-pointer rounded-md border border-[#e2e4ec] bg-[#f1f2f6] p-1.25 font-mono text-[11px] text-[#4a5675] hover:bg-[#e8eaf2]">reset all filters</button>
+      </div>
+
+      <div class="panel left-3.5 top-14" id="enumPanel"><div class="panel-title">Enum</div><div id="enumList"></div></div>
+
+      <div id="focusChip" class="absolute right-3.5 top-3.5 z-16 hidden items-center gap-2 rounded-[9px] bg-accent px-3 py-2 font-sans text-xs font-semibold text-white shadow-[0_2px_12px_rgba(59,91,219,.35)]">
+        <span id="focusName"></span>
+        <span class="flex items-center gap-1 rounded-md bg-white/20 px-1 py-0.5" id="hopSeg">
+          <span class="font-mono text-[10px] opacity-80">hop</span>
+          <button data-h="1" class="cursor-pointer rounded border-none bg-transparent px-1.5 font-mono text-[11px] text-white">1</button>
+          <button data-h="2" class="cursor-pointer rounded border-none bg-transparent px-1.5 font-mono text-[11px] text-white">2</button>
+          <button data-h="3" class="cursor-pointer rounded border-none bg-transparent px-1.5 font-mono text-[11px] text-white">3</button>
+        </span>
+        <button id="focusClear" class="cursor-pointer border-none bg-transparent text-white">✕</button>
+      </div>
+
+      <div class="absolute bottom-3.5 left-3.5 flex items-center gap-1.5 rounded-[9px] border border-paper-line bg-white/88 p-1.25 shadow-[0_2px_10px_rgba(20,30,60,.08)] backdrop-blur-[6px]">
+        <button id="zOut" class="flex size-7.5 cursor-pointer items-center justify-center rounded-md border-none bg-transparent text-base text-slate-ink hover:bg-paper-line">−</button>
+        <span id="zLbl" class="min-w-10.5 select-none text-center font-mono text-[11px] text-[#556]">100%</span>
+        <button id="zIn" class="flex size-7.5 cursor-pointer items-center justify-center rounded-md border-none bg-transparent text-base text-slate-ink hover:bg-paper-line">+</button>
+        <button id="zReset" title="Fit to screen" class="flex size-7.5 cursor-pointer items-center justify-center rounded-md border-none bg-transparent text-base text-slate-ink hover:bg-paper-line">⤢</button>
+      </div>
+
+      <div id="stat" class="absolute bottom-3.5 right-3.5 rounded-[7px] border border-paper-line bg-white/80 px-2.25 py-1.25 font-mono text-[11px] text-[#7a8199]"></div>
+      <div id="busy" class="absolute inset-0 z-30 items-center justify-center bg-paper/75 font-mono text-[13px] text-slate-ink backdrop-blur-[2px]">Preparing PDF…</div>
     </section>
   </div>
 </div>
-<input type="file" id="fileDbml" accept=".dbml,.txt,text/plain" style="display:none">
-<input type="file" id="fileLayout" accept=".json,application/json" style="display:none">
+<input type="file" id="fileDbml" accept=".dbml,.txt,text/plain" class="hidden">
+<input type="file" id="fileLayout" accept=".json,application/json" class="hidden">
 
 <script type="module" src="/src/main.ts"></script>
 </body>

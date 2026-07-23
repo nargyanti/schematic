@@ -5,8 +5,10 @@ import { makeTableEl } from "./render";
 import { state } from "./state";
 import type { Group } from "./types";
 import { bbox } from "./view";
-// Raw stylesheet text, embedded into exported SVG/PNG/PDF so they render standalone.
-import cssText from "./style.css?inline";
+// Diagram-only stylesheet, embedded into exported SVG/PNG/PDF so they render
+// standalone. Deliberately not style.css — that one pulls in the whole Tailwind
+// bundle, which would bloat every export with rules the SVG can't use.
+import cssText from "./diagram.css?inline";
 
 // Trigger a browser download of a blob.
 export function dl(name: string, blob: Blob): void {
