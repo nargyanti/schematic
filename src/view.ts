@@ -1,6 +1,9 @@
 import { sizeTable } from "./geometry";
-import { applyFocus } from "./render";
+import { applyFocus, clearPath } from "./render";
 import { state, visTables } from "./state";
+
+/** Wired by main.ts: lets the minimap follow pan/zoom without view.ts importing it (it imports bbox from here). */
+export const viewHooks = { changed: () => {} };
 
 const svg = () => document.getElementById("svg") as unknown as SVGSVGElement;
 
@@ -45,6 +48,7 @@ export function applyView(): void {
   const g = document.getElementById("viewport");
   if (g) g.setAttribute("transform", `translate(${state.view.x},${state.view.y}) scale(${state.view.s})`);
   document.getElementById("zLbl")!.textContent = Math.round(state.view.s * 100) + "%";
+  viewHooks.changed();
 }
 
 export function zoomBy(f: number): void {
@@ -68,7 +72,8 @@ export function initPanZoom(): void {
     oy = 0;
   s.addEventListener("pointerdown", (e) => {
     if ((e.target as Element).closest(".grp")) return;
-    if (state.focusTable) {
+    // First click on empty canvas leaves path mode; the next one clears focus.
+    if (!clearPath() && state.focusTable) {
       state.focusTable = null;
       applyFocus();
     }

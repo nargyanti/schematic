@@ -4,7 +4,7 @@
 
 import { buildDomainPanel, buildFilterPanel } from "./panels";
 import { state } from "./state";
-import type { AuditMark } from "./state";
+import type { AuditMark, FocusDir } from "./state";
 import type { Role } from "./types";
 
 const PREFIX = "schematic:v2:";
@@ -32,6 +32,12 @@ export interface Snapshot {
   showSoft: boolean;
   softOff: string[];
   focusHops: number;
+  /** Absent in snapshots saved before directional focus existed. */
+  focusDir?: FocusDir;
+  /** "table.column" keys of struck columns. Absent in older snapshots. */
+  struck?: string[];
+  /** Per-table audit notes. Absent in older snapshots. */
+  auditNotes?: Record<string, string>;
   view: { x: number; y: number; s: number };
 }
 
@@ -58,6 +64,9 @@ export function snapshot(): Snapshot {
     showSoft: state.showSoft,
     softOff: [...state.softOff],
     focusHops: state.focusHops,
+    focusDir: state.focusDir,
+    struck: [...state.struck],
+    auditNotes: { ...state.auditNotes },
     view: { ...state.view },
   };
 }
@@ -101,6 +110,9 @@ export function applySnapshot(d: Partial<Snapshot>): RestoredView {
   if (typeof d.showSoft === "boolean") state.showSoft = d.showSoft;
   if (d.softOff) state.softOff = new Set(d.softOff);
   if (typeof d.focusHops === "number") state.focusHops = Math.min(3, Math.max(1, d.focusHops));
+  if (d.focusDir === "both" || d.focusDir === "down" || d.focusDir === "up") state.focusDir = d.focusDir;
+  if (Array.isArray(d.struck)) state.struck = new Set(d.struck.filter((k) => typeof k === "string"));
+  if (d.auditNotes && typeof d.auditNotes === "object") state.auditNotes = { ...d.auditNotes };
   buildFilterPanel();
 
   const hasPos = !!d.pos && Object.keys(d.pos).length > 0;

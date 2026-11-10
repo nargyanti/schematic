@@ -2,6 +2,8 @@ import "./style.css";
 import { SAMPLE } from "./constants";
 import { initExport } from "./export";
 import { initIO } from "./io";
+import { captureForLater, initHistory, modeChanged, pushHistory, spacingGesture } from "./history";
+import { initKeys } from "./keys";
 import { relayout } from "./layout";
 import {
   applyPreset,
@@ -16,11 +18,14 @@ import {
   updateStat,
   type Preset,
 } from "./panels";
+import { initMinimap, scheduleMinimap } from "./minimap";
+import { initNotes } from "./notes";
 import { loadLastSource, saveSession } from "./persist";
-import { applyFocus, applyHubVisibility, buildShell, hooks, renderContent } from "./render";
-import { rebuildEdges, state } from "./state";
+import { applyFocus, applyHubVisibility, buildShell, clearPath, hooks, renderContent, setFocusDir, setFocusHops } from "./render";
+import { rebuildEdges, state, type FocusDir } from "./state";
+import { initTableList, refreshTableList } from "./tableList";
 import { update } from "./update";
-import { fitView, initPanZoom, zoomBy } from "./view";
+import { fitView, initPanZoom, viewHooks, zoomBy } from "./view";
 
 const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
 const editor = $<HTMLTextAreaElement>("editor");
@@ -39,9 +44,15 @@ hooks.layoutChanged = saveSession;
 hooks.auditChanged = () => {
   renderContent();
   updateStat();
+  refreshTableList();
   saveSession();
 };
+hooks.contentChanged = scheduleMinimap;
+hooks.beforeChange = pushHistory;
+hooks.captureMove = captureForLater;
+viewHooks.changed = scheduleMinimap;
 panelHooks.changed = saveSession;
+panelHooks.visibilityChanged = refreshTableList;
 
 // ── Pan / zoom ──
 initPanZoom();
@@ -90,6 +101,7 @@ editor.addEventListener("keydown", (e) => {
 
 // ── Toolbar ──
 $("btnFit").onclick = () => {
+  pushHistory();
   relayout();
   renderContent();
   saveSession();
@@ -105,6 +117,7 @@ $("btnClear").onclick = () => {
 
 // ── Canvas controls ──
 modeSel.onchange = () => {
+  modeChanged();
   relayout();
   renderContent();
   saveSession();
@@ -114,7 +127,10 @@ const applySpacing = debounce(() => {
   renderContent();
   saveSession();
 }, 120);
-$("spacing").oninput = applySpacing;
+$("spacing").oninput = () => {
+  spacingGesture();
+  applySpacing();
+};
 $<HTMLInputElement>("hubToggle").onchange = applyHubVisibility;
 $<HTMLInputElement>("keyToggle").onchange = (e) => {
   state.hideNonKey = (e.target as HTMLInputElement).checked;
@@ -125,7 +141,9 @@ $<HTMLInputElement>("keyToggle").onchange = (e) => {
 // ── Domain / enum / filter panels ──
 $("btnDomain").onclick = () => togglePanel("domainPanel");
 $("btnEnum").onclick = () => togglePanel("enumPanel");
+$("btnIssues").onclick = () => togglePanel("issuesPanel");
 $("btnFilter").onclick = () => togglePanel("filterPanel");
+initTableList();
 $("dpAll").onclick = () => {
   state.model.groups.forEach((g) => state.activeGroups.add(g.id));
   buildDomainPanel();
@@ -140,7 +158,9 @@ document.addEventListener("pointerdown", (e) => {
   const triggers: Record<string, string> = {
     domainPanel: "#btnDomain",
     enumPanel: "#btnEnum",
+    issuesPanel: "#btnIssues",
     filterPanel: "#btnFilter",
+    tablesPanel: "#btnTables",
   };
   for (const p in triggers) {
     const el = $(p);
@@ -195,21 +215,39 @@ $("auditReset").onclick = () => {
   state.audit = {};
   renderContent();
   updateStat();
+  refreshTableList();
   saveSession();
 };
 
-// ── Focus chip: clear + hop radius ──
+$("struckReset").onclick = () => {
+  state.struck.clear();
+  renderContent();
+  updateStat();
+  saveSession();
+};
+
+// ── Focus chip: clear + hop radius + direction ──
 $("focusClear").onclick = () => {
+  // In path mode the ✕ leaves the path (back to the focus view); otherwise it clears focus.
+  if (clearPath()) return;
   state.focusTable = null;
   applyFocus();
 };
 $("hopSeg").addEventListener("click", (e) => {
   const b = (e.target as Element).closest<HTMLButtonElement>("button[data-h]");
   if (!b) return;
-  state.focusHops = +b.dataset.h!;
-  applyFocus();
-  saveSession();
+  setFocusHops(+b.dataset.h!);
 });
+$("dirSeg").addEventListener("click", (e) => {
+  const b = (e.target as Element).closest<HTMLButtonElement>("button[data-dir]");
+  if (b) setFocusDir(b.dataset.dir as FocusDir);
+});
+
+// ── Note editor + keyboard shortcuts (key map lives in keys.ts) ──
+initNotes();
+initKeys();
+initHistory();
+initMinimap();
 
 // ── Editor pane resize handle ──
 (function () {

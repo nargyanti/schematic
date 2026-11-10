@@ -47,6 +47,16 @@
 .grp.audit-done { opacity: 0.42; }
 .grp.audit-skip { opacity: 0.3; }
 
+/* ── Struck columns (Alt+click): unused / ignore. The line is a real <line>,
+   not text-decoration, so PNG/PDF rasterisation draws it too. ── */
+.col-name.struck { fill: #aab1c3; }
+.col-type.struck { fill: #c3c8d6; }
+.strike-line { stroke: #8791a8; stroke-width: 1.2; stroke-opacity: 0.9; }
+
+/* ── Audit note marker in the table header (amber square, not the round DBML note dot) ── */
+.audit-note-box { fill: #f2b43c; stroke: #fff; stroke-width: 1; }
+.audit-note-line { stroke: #7a5200; stroke-width: 1.2; stroke-linecap: round; }
+
 /* ── Interaction states ── */
 .grp { cursor: grab; }
 .grp.drag { cursor: grabbing; }
@@ -69,6 +79,17 @@
 .edge-mark.soft { stroke: var(--soft); stroke-opacity: 0.75; }
 .edge-mark.soft.weak { stroke-opacity: 0.5; }
 .edge-mark.hl { stroke: var(--accent); stroke-opacity: 1; }
+
+/* ── Path finder (Shift+click a second table): the walked edges are thick accent
+   lines, the tables on the path get a heavier outline. Overrides the dashed /
+   hidden hub and inferred styles so the whole route stays readable. ── */
+.grp.on-path .tbl-body { stroke: var(--accent); stroke-width: 2.5; }
+.edge.path { stroke: var(--accent); stroke-width: 3.6; stroke-opacity: 1; stroke-dasharray: none; }
+.edge.hub.path, .edge.soft.path { stroke: var(--accent); stroke-width: 3.6; stroke-opacity: 1; stroke-dasharray: none; }
+.edge.hide.path { display: inline; }
+.edge-mark.path { stroke: var(--accent); stroke-width: 2.6; stroke-opacity: 1; }
+.edge-mark.hub.path, .edge-mark.soft.path { stroke: var(--accent); stroke-opacity: 1; }
+.edge-mark.hide.path { display: inline; }
 
 /* ── Domain group boxes ── */
 .grp-box { fill-opacity: 0.55; stroke-width: 1.5; }

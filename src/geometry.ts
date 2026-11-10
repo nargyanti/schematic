@@ -36,7 +36,7 @@ export function roleBadgeW(t: Table): number {
 // Compute width/height for a table based on its visible columns.
 export function sizeTable(t: Table): void {
   const vc = visCols(t);
-  let w = textW(t.name, NAME_FONT) + PAD_X * 2 + 30 + (t.legacy ? 50 : 0) + roleBadgeW(t) + 8;
+  let w = textW(t.name, NAME_FONT) + PAD_X * 2 + 30 + (t.legacy ? 50 : 0) + roleBadgeW(t) + 8 + (state.auditNotes[t.name] ? 18 : 0);
   vc.forEach((c) => {
     const b = (c.pk ? BADGE : 0) + (c.fk ? BADGE : 0) + (c.note ? 8 : 0);
     const cw = textW(c.name, COL_FONT) + textW(c.type || "", TYPE_FONT) + GAP + PAD_X * 2 + b + 8;

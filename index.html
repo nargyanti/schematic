@@ -22,6 +22,7 @@
     <div class="relative flex gap-1.5">
       <button class="btn" id="btnSvg">SVG</button>
       <button class="btn" id="btnPng">PNG</button>
+      <button class="btn" id="btnMmd" title="Download schema.mmd and copy it to the clipboard (Mermaid erDiagram)">Mermaid</button>
       <button class="btn btn-primary" id="btnPdf">PDF</button>
       <button class="btn btn-a4" id="btnA4" title="Export A4 PDF per domain">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 10h18"/></svg>A4 ▾
@@ -62,9 +63,11 @@
       <div id="ctrl" class="absolute left-3.5 top-3.5 z-15 flex max-w-[calc(100%-28px)] flex-wrap items-center gap-2">
         <div class="chip"><label>Layout</label><select id="mode"><option value="domain">By domain</option><option value="flat">Flat</option></select></div>
         <div class="chip"><label>Density</label><input type="range" id="spacing" min="10" max="100" value="55" class="w-20"></div>
+        <button class="chip" id="btnTables" title="List every table (t)">Tables ▾</button>
         <button class="chip" id="btnDomain">Domain ▾</button>
         <button class="chip" id="btnFilter">Filter ▾<span id="filterBadge" class="ml-1 hidden rounded-full bg-accent px-1.5 py-px font-mono text-[10px] text-white"></span></button>
         <button class="chip" id="btnEnum">Enum ▾</button>
+        <button class="chip" id="btnIssues">Issues ▾<span id="issuesBadge" class="ml-1 hidden rounded-full bg-accent px-1.5 py-px font-mono text-[10px] text-white"></span></button>
         <label class="chip chip-toggle" title="Fade edges touching high-degree hub tables"><input type="checkbox" id="hubToggle" checked> Hubs</label>
         <label class="chip chip-toggle" title="Show only PK and FK columns"><input type="checkbox" id="keyToggle"> Keys</label>
         <div class="chip">
@@ -72,6 +75,22 @@
           <input id="search" placeholder="table or column…" class="w-28 border-none bg-transparent font-sans text-xs text-[#28324d] outline-none">
           <span id="searchCount" class="font-mono text-[10.5px] text-[#98a0b6]"></span>
         </div>
+      </div>
+
+      <div class="panel left-3.5 top-14 w-96" id="tablesPanel">
+        <div class="tl-head">
+          <div class="flex items-center gap-2">
+            <input id="tlFilter" placeholder="filter tables…" autocomplete="off" spellcheck="false" class="min-w-0 flex-1 rounded-md border border-[#e2e4ec] bg-[#fafbfd] px-2 py-1 font-sans text-xs text-[#28324d] outline-none focus:border-accent">
+            <select id="tlSort" title="Sort" class="cursor-pointer rounded-md border border-[#e2e4ec] bg-[#fafbfd] px-1 py-1 font-sans text-xs text-[#28324d] outline-none">
+              <option value="name">name</option>
+              <option value="in">FK in</option>
+              <option value="out">FK out</option>
+              <option value="audit">audit (todo first)</option>
+            </select>
+          </div>
+          <div class="mt-1 px-1 font-mono text-[10.5px] text-[#98a0b6]"><span id="tlCount"></span> · click a row to focus</div>
+        </div>
+        <div id="tlList"></div>
       </div>
 
       <div class="panel left-3.5 top-14" id="domainPanel">
@@ -105,8 +124,9 @@
         <div class="panel-sep"></div>
         <div class="panel-title">Audit</div>
         <label class="role-row"><input type="checkbox" id="auditHide"><span>Hide tables marked done</span><span class="cnt" id="auditCount">0</span></label>
-        <div class="soft-row">Right-click a table to mark it: ✓ done → ⚠ check → — ignore</div>
+        <div class="soft-row">Right-click a table to cycle its mark: ✓ done → ⚠ check → — ignore. Or focus it and press <b>d</b> / <b>w</b> / <b>s</b> (<b>u</b> clears), <b>n</b> for a note. Alt+click a column to strike it out.</div>
         <button id="auditReset" class="mt-1 w-full cursor-pointer rounded-md border border-[#e2e4ec] bg-[#f1f2f6] p-1.25 font-mono text-[11px] text-[#4a5675] hover:bg-[#e8eaf2]">clear all audit marks</button>
+        <button id="struckReset" class="mt-1 w-full cursor-pointer rounded-md border border-[#e2e4ec] bg-[#f1f2f6] p-1.25 font-mono text-[11px] text-[#4a5675] hover:bg-[#e8eaf2]">clear all struck columns</button>
 
         <div class="panel-sep"></div>
         <div class="panel-title">Inferred relationships</div>
@@ -120,6 +140,8 @@
 
       <div class="panel left-3.5 top-14" id="enumPanel"><div class="panel-title">Enum</div><div id="enumList"></div></div>
 
+      <div class="panel left-3.5 top-14 w-96" id="issuesPanel"><div class="panel-title">Schema issues</div><div id="issuesList"></div></div>
+
       <div id="focusChip" class="absolute right-3.5 top-3.5 z-16 hidden items-center gap-2 rounded-[9px] bg-accent px-3 py-2 font-sans text-xs font-semibold text-white shadow-[0_2px_12px_rgba(59,91,219,.35)]">
         <span id="focusName"></span>
         <span class="flex items-center gap-1 rounded-md bg-white/20 px-1 py-0.5" id="hopSeg">
@@ -128,7 +150,32 @@
           <button data-h="2" class="cursor-pointer rounded border-none bg-transparent px-1.5 font-mono text-[11px] text-white">2</button>
           <button data-h="3" class="cursor-pointer rounded border-none bg-transparent px-1.5 font-mono text-[11px] text-white">3</button>
         </span>
+        <span class="flex items-center gap-1 rounded-md bg-white/20 px-1 py-0.5" id="dirSeg">
+          <button data-dir="up" title="ancestors — tables this one references" class="cursor-pointer rounded border-none bg-transparent px-1.5 font-mono text-[11px] text-white">↑</button>
+          <button data-dir="down" title="descendants — tables that reference this one" class="cursor-pointer rounded border-none bg-transparent px-1.5 font-mono text-[11px] text-white">↓</button>
+          <button data-dir="both" title="both directions" class="cursor-pointer rounded border-none bg-transparent px-1.5 font-mono text-[11px] text-white">↕</button>
+        </span>
+        <button id="noteBtn" title="Audit note for this table (n)" class="cursor-pointer rounded border-none bg-transparent px-1 text-white">📝</button>
         <button id="focusClear" class="cursor-pointer border-none bg-transparent text-white">✕</button>
+      </div>
+
+      <div id="noteEditor" class="absolute right-3.5 top-14 z-17 hidden w-72 flex-col gap-2 rounded-[11px] border border-paper-line bg-white p-2.5 shadow-[0_8px_30px_rgba(20,30,60,.18)]">
+        <div class="font-mono text-[11px] uppercase tracking-[.06em] text-[#98a0b6]">Audit note · <span id="noteTable" class="normal-case tracking-normal text-[#28324d]"></span></div>
+        <textarea id="noteText" rows="4" placeholder="What did you find? (Ctrl+Enter to save, Esc to cancel)" class="w-full resize-y rounded-md border border-[#e2e4ec] bg-[#fafbfd] p-1.5 font-sans text-xs text-[#28324d] outline-none focus:border-accent"></textarea>
+        <div class="flex gap-1.5">
+          <button id="noteSave" class="flex-1 cursor-pointer rounded-md border border-accent bg-accent p-1.25 font-mono text-[11px] text-white hover:bg-accent-hi">Save</button>
+          <button id="noteDelete" class="flex-1 cursor-pointer rounded-md border border-[#e2e4ec] bg-[#f1f2f6] p-1.25 font-mono text-[11px] text-[#4a5675] hover:bg-[#e8eaf2]">Delete</button>
+        </div>
+      </div>
+
+      <div id="helpOverlay" class="absolute inset-0 z-40 hidden items-center justify-center bg-ink/40 backdrop-blur-[2px]">
+        <div class="max-h-[85%] w-[460px] max-w-[92%] overflow-auto rounded-[12px] border border-paper-line bg-white p-4 text-xs text-[#28324d] shadow-[0_12px_40px_rgba(20,30,60,.3)]">
+          <div class="mb-2 flex items-center justify-between">
+            <b class="text-sm">Keyboard &amp; mouse</b>
+            <button id="helpClose" class="cursor-pointer border-none bg-transparent text-sm text-[#7a8199]">✕</button>
+          </div>
+          <div id="helpBody" class="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1"></div>
+        </div>
       </div>
 
       <div class="absolute bottom-3.5 left-3.5 flex items-center gap-1.5 rounded-[9px] border border-paper-line bg-white/88 p-1.25 shadow-[0_2px_10px_rgba(20,30,60,.08)] backdrop-blur-[6px]">
@@ -136,6 +183,15 @@
         <span id="zLbl" class="min-w-10.5 select-none text-center font-mono text-[11px] text-[#556]">100%</span>
         <button id="zIn" class="flex size-7.5 cursor-pointer items-center justify-center rounded-md border-none bg-transparent text-base text-slate-ink hover:bg-paper-line">+</button>
         <button id="zReset" title="Fit to screen" class="flex size-7.5 cursor-pointer items-center justify-center rounded-md border-none bg-transparent text-base text-slate-ink hover:bg-paper-line">⤢</button>
+        <span class="h-4 w-px bg-paper-line"></span>
+        <button id="undoBtn" title="Undo table positions (Ctrl+Z)" disabled class="hud-btn">↶</button>
+        <button id="redoBtn" title="Redo (Ctrl+Shift+Z)" disabled class="hud-btn">↷</button>
+        <button id="mapBtn" title="Minimap (m)" class="hud-btn">▦</button>
+        <button id="helpBtn" title="Keyboard shortcuts (?)" class="flex size-7.5 cursor-pointer items-center justify-center rounded-md border-none bg-transparent font-mono text-[13px] text-[#7a8199] hover:bg-paper-line">?</button>
+      </div>
+
+      <div id="minimap" class="absolute bottom-12 right-3.5 z-10 overflow-hidden rounded-[9px] border border-paper-line bg-white/88 shadow-[0_2px_10px_rgba(20,30,60,.08)] backdrop-blur-[6px]">
+        <canvas id="minimapCv" class="block cursor-pointer touch-none" title="Click or drag to pan"></canvas>
       </div>
 
       <div id="stat" class="absolute bottom-3.5 right-3.5 rounded-[7px] border border-paper-line bg-white/80 px-2.25 py-1.25 font-mono text-[11px] text-[#7a8199]"></div>

@@ -1,8 +1,9 @@
 import { jsPDF } from "jspdf";
 import { edgeGeom, el, markEl, NS } from "./geometry";
 import { layoutFlat, spacingVals } from "./layout";
+import { toMermaid } from "./mermaid";
 import { makeTableEl } from "./render";
-import { state } from "./state";
+import { state, visRefs, visTables } from "./state";
 import type { Group } from "./types";
 import { bbox } from "./view";
 // Diagram-only stylesheet, embedded into exported SVG/PNG/PDF so they render
@@ -260,6 +261,23 @@ export function initExport(): void {
     const { s, W, H } = contentSVGString();
     const cv = await rasterizeString(s, W, H, pickScale(W, H));
     cv.toBlob((b) => dl("erd.png", b!), "image/png");
+  };
+  // Mermaid: download AND copy, since the usual next step is pasting into a doc/PR.
+  const btnMmd = document.getElementById("btnMmd")!;
+  btnMmd.onclick = async () => {
+    const tables = visTables();
+    if (!tables.length) return;
+    const text = toMermaid(tables, visRefs());
+    dl("schema.mmd", new Blob([text], { type: "text/plain" }));
+    let label = "Saved ✓";
+    try {
+      await navigator.clipboard.writeText(text);
+      label = "Copied ✓";
+    } catch {
+      // Clipboard can be blocked (insecure context, permissions); the download still worked.
+    }
+    btnMmd.textContent = label;
+    setTimeout(() => (btnMmd.textContent = "Mermaid"), 1500);
   };
   document.getElementById("btnPdf")!.onclick = async () => {
     if (!hasTables()) return;

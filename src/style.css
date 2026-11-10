@@ -187,6 +187,75 @@
     @apply line-through opacity-40;
   }
 
+  /* ── Table list panel ── */
+  /* Sticky so the filter box stays put while a long list scrolls under it;
+     the negative margins swallow the panel's own padding. */
+  .tl-head {
+    @apply sticky -top-2.5 z-[1] -mx-2.5 -mt-2.5 mb-1 bg-white px-2.5 pb-1.5 pt-2.5;
+  }
+  .t-row {
+    @apply flex cursor-pointer items-center gap-2 rounded-md px-1.5 py-1 text-xs
+           text-[#28324d] hover:bg-[#f4f5f9];
+  }
+  .t-row .sw {
+    @apply size-2.5 shrink-0 rounded-[3px];
+  }
+  .t-row .t-mark {
+    @apply w-3.5 shrink-0 text-center text-[11px];
+  }
+  .t-row .t-mark.done {
+    @apply text-[#2f9e5f];
+  }
+  .t-row .t-mark.warn {
+    @apply text-[#d99a2e];
+  }
+  .t-row .t-mark.skip {
+    @apply text-[#98a0b6];
+  }
+  .t-row .t-name {
+    @apply min-w-0 flex-1 truncate font-mono text-[11.5px];
+  }
+  .t-row .t-hint {
+    @apply rounded bg-[#eef0f5] px-1 font-mono text-[9px] uppercase tracking-[.04em] text-[#98a0b6];
+  }
+  .t-row .t-deg {
+    @apply shrink-0 font-mono text-[10px] text-[#98a0b6];
+  }
+  .t-row .t-note {
+    @apply w-4 shrink-0 text-center text-[10px];
+  }
+  .t-row.is-hidden .t-name,
+  .t-row.is-hidden .sw {
+    @apply opacity-45;
+  }
+
+  /* ── Zoom HUD icon buttons (undo / redo / minimap) ── */
+  .hud-btn {
+    @apply flex size-7.5 cursor-pointer items-center justify-center rounded-md border-none
+           bg-transparent text-base text-slate-ink hover:bg-paper-line
+           disabled:cursor-default disabled:opacity-30 disabled:hover:bg-transparent;
+  }
+
+  /* ── Issues panel rows ── */
+  .issue-row {
+    @apply flex-wrap items-baseline gap-x-1.5 gap-y-0 leading-snug;
+  }
+  .issue-row b {
+    @apply font-semibold text-[#28324d];
+  }
+  .issue-row span:last-child {
+    @apply basis-full pl-3.5;
+  }
+  .issue-dot {
+    @apply inline-block size-1.5 shrink-0 self-center rounded-full;
+  }
+  .issue-dot.warn {
+    @apply bg-[#e0a030];
+  }
+  .issue-dot.info {
+    @apply bg-[#98a0b6];
+  }
+
   /* ── A4 export popover ── */
   .a4pop {
     @apply absolute right-0 top-[calc(100%+8px)] z-40 hidden w-[246px] rounded-[11px]

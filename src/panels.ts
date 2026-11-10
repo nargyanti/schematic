@@ -20,7 +20,11 @@ const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getEleme
 const svg = () => document.getElementById("svg") as unknown as SVGSVGElement;
 
 /** Set by main.ts so panels can persist without importing the storage module. */
-export const panelHooks = { changed: () => {} };
+export const panelHooks = {
+  changed: () => {},
+  /** Fired by refresh() — visibility changed, so the table list's greyed rows are stale. */
+  visibilityChanged: () => {},
+};
 
 export type Preset = "master" | "unref" | "config" | "trx";
 
@@ -187,12 +191,13 @@ export function updateStat(): void {
   const total = state.model.tables.length;
   let s = `${visTables().length}/${total} tables · ${visRefs().length} relations`;
   if (done) s += ` · ✓ ${done}/${total}`;
+  if (state.struck.size) s += ` · ⌀ ${state.struck.size} struck`;
   $("stat").textContent = s;
   $("auditCount").textContent = String(done);
 }
 
 export function togglePanel(id: string): void {
-  ["domainPanel", "enumPanel", "filterPanel"].forEach((p) => {
+  ["domainPanel", "enumPanel", "filterPanel", "issuesPanel", "tablesPanel"].forEach((p) => {
     if (p === id) $(p).classList.toggle("show");
     else $(p).classList.remove("show");
   });
@@ -205,6 +210,7 @@ export function refresh(): void {
   updateStat();
   updateFilterBadge();
   panelHooks.changed();
+  panelHooks.visibilityChanged();
 }
 
 /** Same, but the soft-ref set changed so metrics and the list must rebuild. */
@@ -290,6 +296,11 @@ export function jumpTo(q: string): void {
     updateStat();
     updateFilterBadge();
   }
+  centerAndFocus(t);
+}
+
+/** Pan/zoom so `t` sits mid-canvas, then focus it. */
+function centerAndFocus(t: Table): void {
   const p = state.pos[t.name];
   if (!p) return;
   sizeTable(t);
@@ -299,7 +310,21 @@ export function jumpTo(q: string): void {
   state.view.y = r.height / 2 - (p.y + t.height! / 2) * state.view.s;
   applyView();
   state.focusTable = t.name;
+  state.pathTo = null;
   applyFocus();
+}
+
+/** Jump to a table by exact name (used by the Issues panel), unhiding it if needed. */
+export function focusTableByName(name: string): void {
+  const t = state.tableByName[name];
+  if (!t) return;
+  if (ensureVisible(t)) {
+    relayout();
+    renderContent();
+    updateStat();
+    updateFilterBadge();
+  }
+  centerAndFocus(t);
 }
 
 /** Clear the search highlight without touching focus. */

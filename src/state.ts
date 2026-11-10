@@ -1,7 +1,10 @@
-import { computeMetrics, inferSoftRefs, softRefKey } from "./metrics";
+import { computeMetrics, inferSoftRefs, refEnds, softRefKey } from "./metrics";
 import type { GroupBox, Model, Point, Ref, Role, Table, TableMetric } from "./types";
 
 export type AuditMark = "done" | "warn" | "skip";
+
+/** Which way the focus radius walks: toward parents, toward children, or both. */
+export type FocusDir = "both" | "down" | "up";
 
 export interface FilterState {
   outMin: number;
@@ -24,6 +27,10 @@ export const state = {
   focusTable: null as string | null,
   /** Focus radius in relationship hops (1–3). */
   focusHops: 1,
+  /** "up" = ancestors (tables this one references), "down" = descendants. */
+  focusDir: "both" as FocusDir,
+  /** Path finder target: while set (and a table is focused) the canvas shows the shortest path focusTable → pathTo. */
+  pathTo: null as string | null,
   hideNonKey: false,
   collapsed: new Set<string>(),
   tableByName: {} as Record<string, Table>,
@@ -50,6 +57,10 @@ export const state = {
 
   // ── Audit marks ──
   audit: {} as Record<string, AuditMark>,
+  /** Free-text audit note per table name (distinct from the DBML `note:`). */
+  auditNotes: {} as Record<string, string>,
+  /** Columns marked unused/ignored, keyed "table.column". */
+  struck: new Set<string>(),
 
   /** Lowercased search term; highlights matching column rows. */
   colQuery: "",
@@ -146,25 +157,75 @@ export function isHubEdge(r: { to: { table: string }; from: { table: string } })
   return state.hubSet.has(r.to.table) || state.hubSet.has(r.from.table);
 }
 
-/** Tables within `hops` relationship steps of `name`, including itself. */
-export function neighborhood(name: string, hops: number): Set<string> {
+/** Key for a struck column in `state.struck`. */
+export const struckKey = (table: string, col: string) => table + "." + col;
+
+export interface FocusScope {
+  tables: Set<string>;
+  /** Indexes into state.edges of the edges to keep lit. */
+  edges: Set<number>;
+}
+
+/**
+ * Which way a ref points, as [from-table-side, to-table-side] steps.
+ *
+ * Parser convention (verified in parser.ts + metrics.ts refEnds): for
+ * `posts.author_id > users.id`, `from` = posts (the FK owner / child) and
+ * `to` = users (the referenced parent). `<` flips it (`to` owns the FK), `-`
+ * is treated like `>` (from owns the FK), and `<>` makes each side the child
+ * of the other, so it is walkable in both directions. Inferred refs are `>`.
+ * "down" = parent → child (descendants), "up" = child → parent (ancestors).
+ */
+function steps(r: Ref, dir: FocusDir): Array<[string, string]> {
+  if (dir === "both") return [[r.from.table, r.to.table], [r.to.table, r.from.table]];
+  const out: Array<[string, string]> = [];
+  for (const { child, parent } of refEnds(r))
+    out.push(dir === "down" ? [parent.table, child.table] : [child.table, parent.table]);
+  return out;
+}
+
+/**
+ * Tables within `hops` steps of `name` (including itself) and the edges to
+ * light. In "both" mode an edge lights when both ends are in the set, so hops
+ * 2–3 show a connected sub-graph. In a directional mode only edges actually
+ * walked in that direction light — sibling↔sibling edges whose ends merely
+ * happen to be in the set stay dim, otherwise "descendants" would show lines
+ * running back up to other parents.
+ */
+export function focusScope(name: string, hops: number, dir: FocusDir = "both"): FocusScope {
   const adj: Record<string, string[]> = {};
-  for (const r of state.edges) {
-    (adj[r.from.table] ||= []).push(r.to.table);
-    (adj[r.to.table] ||= []).push(r.from.table);
-  }
-  const seen = new Set([name]);
+  state.edges.forEach((r) => {
+    for (const [a, b] of steps(r, dir)) (adj[a] ||= []).push(b);
+  });
+  const depth = new Map<string, number>([[name, 0]]);
   let frontier = [name];
-  for (let h = 0; h < hops; h++) {
+  for (let h = 1; h <= hops && frontier.length; h++) {
     const next: string[] = [];
     for (const n of frontier)
       for (const m of adj[n] || [])
-        if (!seen.has(m)) {
-          seen.add(m);
+        if (!depth.has(m)) {
+          depth.set(m, h);
           next.push(m);
         }
     frontier = next;
-    if (!frontier.length) break;
   }
-  return seen;
+  const tables = new Set(depth.keys());
+  const edges = new Set<number>();
+  state.edges.forEach((r, i) => {
+    if (dir === "both") {
+      if (tables.has(r.from.table) && tables.has(r.to.table)) edges.add(i);
+      return;
+    }
+    // Walked = a step leaves a table that was expanded (depth < hops).
+    for (const [a, b] of steps(r, dir)) {
+      const d = depth.get(a);
+      if (d !== undefined && d < hops && tables.has(b)) edges.add(i);
+    }
+  });
+  return { tables, edges };
+}
+
+/** Tables within `hops` relationship steps of `name`, including itself. */
+export function neighborhood(name: string, hops: number, dir: FocusDir = "both"): Set<string> {
+  return focusScope(name, hops, dir).tables;
 }

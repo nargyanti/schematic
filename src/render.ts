@@ -1,4 +1,4 @@
-import { BADGE, COL_FONT, GAP, HEAD_H, PAD_X, ROW_H } from "./constants";
+import { BADGE, COL_FONT, GAP, HEAD_H, PAD_X, ROW_H, TYPE_FONT } from "./constants";
 import {
   edgeGeom,
   el,
@@ -12,11 +12,14 @@ import {
   visCols,
 } from "./geometry";
 import { ROLE_LABEL } from "./metrics";
-import { isHubEdge, neighborhood, state, visRefs, visTables, type AuditMark } from "./state";
+import { findPath } from "./pathfind";
+import { focusScope, isHubEdge, state, struckKey, visRefs, visTables, type AuditMark, type FocusDir } from "./state";
 import type { Point, Ref, Table } from "./types";
 
 const svg = () => document.getElementById("svg") as unknown as SVGSVGElement;
 const modeVal = () => (document.getElementById("mode") as HTMLSelectElement).value;
+
+const DIR_ARROW: Record<FocusDir, string> = { both: "↕", down: "↓", up: "↑" };
 
 /** Cycle order for the right-click audit mark. */
 const AUDIT_CYCLE: Array<AuditMark | undefined> = ["done", "warn", "skip", undefined];
@@ -77,6 +80,19 @@ export function makeTableEl(t: Table, p: Point): SVGElement {
     rt.appendChild(ti);
     rightX -= bw + 8;
   }
+  // Audit note: an amber square, deliberately unlike the round DBML note dot.
+  const auditNote = state.auditNotes[t.name];
+  if (auditNote) {
+    const mk = el("g", {}, "audit-note-mark");
+    mk.appendChild(el("rect", { x: rightX - 10, y: HEAD_H / 2 - 5, rx: 2, width: 10, height: 10 }, "audit-note-box"));
+    mk.appendChild(el("line", { x1: rightX - 7.5, y1: HEAD_H / 2 - 1.5, x2: rightX - 2.5, y2: HEAD_H / 2 - 1.5 }, "audit-note-line"));
+    mk.appendChild(el("line", { x1: rightX - 7.5, y1: HEAD_H / 2 + 1.5, x2: rightX - 4.5, y2: HEAD_H / 2 + 1.5 }, "audit-note-line"));
+    const ti = el("title");
+    ti.textContent = "Audit note: " + auditNote;
+    mk.appendChild(ti);
+    g.appendChild(mk);
+    rightX -= 18;
+  }
   if (t.note) {
     g.appendChild(el("circle", { cx: rightX, cy: HEAD_H / 2, r: 3 }, "note-dot"));
     const ti = el("title");
@@ -90,7 +106,7 @@ export function makeTableEl(t: Table, p: Point): SVGElement {
     if (i > 0) g.appendChild(el("line", { x1: 0, y1: y, x2: t.width!, y2: y }, "col-sep"));
     if (q && c.name.toLowerCase().includes(q))
       g.appendChild(el("rect", { x: 1, y: y + 1, width: t.width! - 2, height: ROW_H - 2 }, "row-match"));
-    const hit = el("rect", { x: 0, y: y, width: t.width!, height: ROW_H }, "row-hit");
+    const hit = el("rect", { x: 0, y: y, width: t.width!, height: ROW_H, "data-col": c.name }, "row-hit");
     if (c.note) {
       const ti = el("title");
       ti.textContent = c.note;
@@ -117,14 +133,22 @@ export function makeTableEl(t: Table, p: Point): SVGElement {
       b.textContent = "FK";
       g.appendChild(b);
     }
-    const cn = el("text", { x: PAD_X, y: y + ROW_H / 2 + 4 }, "col-name");
+    const struck = state.struck.has(struckKey(t.name, c.name));
+    const nameW = textW(c.name, COL_FONT);
+    const cn = el("text", { x: PAD_X, y: y + ROW_H / 2 + 4 }, "col-name" + (struck ? " struck" : ""));
     cn.textContent = c.name;
     g.appendChild(cn);
+    let endX = PAD_X + nameW;
     if (c.type) {
-      const ct = el("text", { x: PAD_X + textW(c.name, COL_FONT) + GAP, y: y + ROW_H / 2 + 4 }, "col-type");
+      const ct = el("text", { x: PAD_X + nameW + GAP, y: y + ROW_H / 2 + 4 }, "col-type" + (struck ? " struck" : ""));
       ct.textContent = c.type;
       g.appendChild(ct);
+      endX += GAP + textW(c.type, TYPE_FONT);
     }
+    // A drawn line, not text-decoration: SVG text-decoration is unreliable in
+    // the canvas rasteriser behind PNG/PDF export.
+    if (struck)
+      g.appendChild(el("line", { x1: PAD_X - 2, y1: y + ROW_H / 2 + 0.5, x2: endX + 2, y2: y + ROW_H / 2 + 0.5 }, "strike-line"));
   });
   if (state.collapsed.has(t.name) && t.columns.length) {
     const ci = el("text", { x: t.width! - PAD_X, y: HEAD_H / 2 + 4, "text-anchor": "end" }, "collapse-ind");
@@ -174,6 +198,7 @@ export function renderContent(): void {
   routeEdges();
   bindDrag();
   applyFocus();
+  hooks.contentChanged();
 }
 
 export function routeEdges(): void {
@@ -190,8 +215,11 @@ export function routeEdges(): void {
     const hub = path.classList.contains("hub") ? " hub" : "",
       hide = path.classList.contains("hide") ? " hide" : "",
       soft = path.classList.contains("soft") ? " soft" : "",
-      weak = path.classList.contains("weak") ? " weak" : "";
-    const extra = hub + hide + soft + weak;
+      weak = path.classList.contains("weak") ? " weak" : "",
+      // Re-created markers must keep the focus / path-finder state of their edge.
+      dim = path.classList.contains("dim") ? " dim" : "",
+      onPath = path.classList.contains("path") ? " path" : "";
+    const extra = hub + hide + soft + weak + dim + onPath;
     const mf = markEl(g.A, g.aS, r.sym, "from", extra);
     mf.setAttribute("data-mk", path.dataset.ei + "-from");
     path.parentNode!.appendChild(mf);
@@ -207,12 +235,26 @@ export function applyHubVisibility(): void {
   document.querySelectorAll(".edge-mark.hub").forEach((e) => e.classList.toggle("hide", hide));
 }
 
+/** Set (or with undefined, clear) a table's audit mark and persist it. */
+export function setAuditMark(name: string, mark: AuditMark | undefined): void {
+  if (mark) state.audit[name] = mark;
+  else delete state.audit[name];
+  onAuditChange();
+}
+
 /** Advance a table's audit mark one step through the cycle. */
 export function cycleAudit(name: string): void {
   const cur = state.audit[name];
   const next = AUDIT_CYCLE[(AUDIT_CYCLE.indexOf(cur) + 1) % AUDIT_CYCLE.length];
   if (next) state.audit[name] = next;
   else delete state.audit[name];
+}
+
+/** Toggle a column's struck (unused / ignore) flag. */
+export function toggleStruck(table: string, col: string): void {
+  const k = struckKey(table, col);
+  if (!state.struck.delete(k)) state.struck.add(k);
+  onAuditChange();
 }
 
 function bindDrag(): void {
@@ -226,7 +268,29 @@ function bindDrag(): void {
     g.addEventListener("pointerdown", (e) => {
       e.stopPropagation();
       name = g.dataset.table!;
+      // Alt+click strikes a column: no focus, no drag.
+      if (e.altKey) {
+        const col = (e.target as Element).closest<SVGElement>(".row-hit")?.dataset.col;
+        if (col !== undefined) {
+          e.preventDefault();
+          toggleStruck(name, col);
+        }
+        return;
+      }
+      // Shift+click = path finder: never a drag. With a table focused it picks
+      // the path target; with nothing focused it just focuses (so the next
+      // Shift+click has a start); on the focused table itself it clears the path.
+      if (e.shiftKey) {
+        e.preventDefault();
+        if (state.focusTable && state.focusTable !== name) setPathTo(name);
+        else if (!state.focusTable) setFocus(name);
+        else clearPath();
+        return;
+      }
       if (!state.pos[name]) return;
+      // Cheap snapshot taken now, pushed to the undo stack only once the table
+      // really moves (see below) — a plain click must not create an entry.
+      const commitUndo = hooks.captureMove();
       moved = false;
       sx = e.clientX;
       sy = e.clientY;
@@ -235,11 +299,15 @@ function bindDrag(): void {
       g.classList.add("drag");
       g.setPointerCapture(e.pointerId);
       const move = (ev: PointerEvent) => {
-        if (Math.abs(ev.clientX - sx) + Math.abs(ev.clientY - sy) > 3) moved = true;
+        if (!moved && Math.abs(ev.clientX - sx) + Math.abs(ev.clientY - sy) > 3) {
+          moved = true;
+          commitUndo();
+        }
         state.pos[name].x = ox + (ev.clientX - sx) / state.view.s;
         state.pos[name].y = oy + (ev.clientY - sy) / state.view.s;
         g.setAttribute("transform", `translate(${state.pos[name].x},${state.pos[name].y})`);
         routeEdges();
+        hooks.contentChanged();
       };
       const up = () => {
         g.classList.remove("drag");
@@ -253,7 +321,9 @@ function bindDrag(): void {
     });
     g.addEventListener("dblclick", (e) => {
       e.stopPropagation();
+      if (e.altKey) return; // two quick alt+clicks on columns are not a collapse
       const n = g.dataset.table!;
+      hooks.beforeChange();
       if (state.collapsed.has(n)) state.collapsed.delete(n);
       else state.collapsed.add(n);
       renderContent();
@@ -275,6 +345,14 @@ function bindDrag(): void {
 export const hooks = {
   layoutChanged: () => {},
   auditChanged: () => {},
+  /** Fired after focus is applied or cleared (e.g. so the note editor can close). */
+  focusChanged: () => {},
+  /** Fired after the content is redrawn or a table moves (minimap refresh). */
+  contentChanged: () => {},
+  /** Called just before an undoable change (e.g. collapse) mutates state. */
+  beforeChange: () => {},
+  /** Snapshots positions now; the returned function pushes it onto the undo stack. */
+  captureMove: (): (() => void) => () => {},
 };
 const onLayoutChange = () => hooks.layoutChanged();
 const onAuditChange = () => hooks.auditChanged();
@@ -293,39 +371,103 @@ function hl(name: string, on: boolean): void {
 
 export function setFocus(name: string): void {
   state.focusTable = state.focusTable === name ? null : name;
+  state.pathTo = null;
   applyFocus();
+}
+
+/** Show the shortest path from the focused table to `name`. */
+export function setPathTo(name: string): void {
+  if (!state.focusTable || name === state.focusTable) return;
+  state.pathTo = name;
+  applyFocus();
+}
+
+/** Leave path mode, back to the ordinary focus view. Returns whether a path was showing. */
+export function clearPath(): boolean {
+  if (!state.pathTo) return false;
+  state.pathTo = null;
+  applyFocus();
+  return true;
+}
+
+/** Set the focus radius (1–3) and persist it. */
+export function setFocusHops(n: number): void {
+  state.pathTo = null; // changing the radius means "back to the neighbourhood"
+  state.focusHops = Math.min(3, Math.max(1, n));
+  applyFocus();
+  onLayoutChange();
+}
+
+/** Set which way the focus radius walks and persist it. */
+export function setFocusDir(dir: FocusDir): void {
+  state.pathTo = null;
+  state.focusDir = dir;
+  applyFocus();
+  onLayoutChange();
 }
 
 export function applyFocus(): void {
   const chip = document.getElementById("focusChip")!;
+  const hopSeg = document.getElementById("hopSeg")!,
+    dirSeg = document.getElementById("dirSeg")!;
   if (!state.focusTable) {
-    document.querySelectorAll(".dim,.focused").forEach((e) => e.classList.remove("dim", "focused"));
+    state.pathTo = null;
+    document.querySelectorAll(".dim,.focused,.on-path,.path").forEach((e) => e.classList.remove("dim", "focused", "on-path", "path"));
     chip.classList.add("hidden");
     chip.classList.remove("flex");
+    hooks.focusChanged();
+    hooks.contentChanged(); // minimap outlines the focused table
     return;
   }
-  const conn = neighborhood(state.focusTable, state.focusHops);
+  // Path mode overrides the hop/direction neighbourhood while it is active.
+  let path: { tables: string[]; edges: number[] } | null = null;
+  if (state.pathTo) {
+    const drawn = new Set(visTables().map((t) => t.name));
+    path = findPath(state.edges, state.focusTable, state.pathTo, drawn);
+  }
+  const { tables: conn, edges: litEdges } = state.pathTo
+    ? { tables: new Set(path ? path.tables : [state.focusTable, state.pathTo]), edges: new Set(path ? path.edges : []) }
+    : focusScope(state.focusTable, state.focusHops, state.focusDir);
   document.querySelectorAll<SVGGElement>(".grp").forEach((g) => {
     const n = g.dataset.table!;
     g.classList.toggle("dim", !conn.has(n));
     g.classList.toggle("focused", n === state.focusTable);
+    g.classList.toggle("on-path", !!state.pathTo && conn.has(n));
   });
   document.querySelectorAll<SVGPathElement>(".edge").forEach((p) => {
-    // An edge stays lit when both ends are inside the neighborhood — that is
-    // what makes hops 2–3 show a connected sub-graph rather than a lone star.
-    const on = conn.has(p.dataset.ef!) && conn.has(p.dataset.et!);
+    // focusScope decides which edges stay lit (see there for the directional
+    // rule); in "both" mode that is every edge with both ends in the set.
+    const on = litEdges.has(+p.dataset.ei!);
+    const onPath = on && !!state.pathTo;
     p.classList.toggle("dim", !on);
+    p.classList.toggle("path", onPath);
     ["from", "to"].forEach((e) => {
       const m = document.querySelector(`[data-mk="${p.dataset.ei}-${e}"]`);
-      m && m.classList.toggle("dim", !on);
+      if (!m) return;
+      m.classList.toggle("dim", !on);
+      m.classList.toggle("path", onPath);
     });
   });
   document.querySelectorAll(".grp-box").forEach((b) => b.classList.add("dim"));
-  document.getElementById("focusName")!.textContent =
-    "Focus: " + state.focusTable + (state.focusHops > 1 ? ` · ${conn.size} tabel` : "");
+  const arrow = DIR_ARROW[state.focusDir];
+  const showCount = state.focusHops > 1 || state.focusDir !== "both";
+  const hops = path ? path.edges.length : 0;
+  document.getElementById("focusName")!.textContent = state.pathTo
+    ? path
+      ? `Path: ${path.tables.join(" → ")} (${hops} hop${hops === 1 ? "" : "s"})`
+      : `No path between ${state.focusTable} and ${state.pathTo}`
+    : "Focus: " + state.focusTable + (showCount ? ` · ${arrow} ${conn.size} tables` : "");
+  // Hop radius / direction mean nothing while a path is shown.
+  hopSeg.style.display = dirSeg.style.display = state.pathTo ? "none" : "";
   document.querySelectorAll<HTMLButtonElement>("#hopSeg button").forEach((b) => {
     b.classList.toggle("bg-white/30", +b.dataset.h! === state.focusHops);
   });
+  document.querySelectorAll<HTMLButtonElement>("#dirSeg button").forEach((b) => {
+    b.classList.toggle("bg-white/30", b.dataset.dir === state.focusDir);
+  });
+  document.getElementById("noteBtn")!.classList.toggle("bg-white/30", !!state.auditNotes[state.focusTable]);
   chip.classList.remove("hidden");
   chip.classList.add("flex");
+  hooks.focusChanged();
+  hooks.contentChanged(); // minimap outlines the focused table
 }

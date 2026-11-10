@@ -1,9 +1,11 @@
 import { dl } from "./export";
+import { pushHistory } from "./history";
 import { relayout } from "./layout";
 import { updateFilterBadge, updateStat } from "./panels";
 import { applySnapshot, snapshot } from "./persist";
 import { renderContent } from "./render";
 import { state } from "./state";
+import { refreshTableList } from "./tableList";
 import { update } from "./update";
 import { applyView, fitView } from "./view";
 
@@ -27,12 +29,15 @@ export function initIO(): void {
     const rd = new FileReader();
     rd.onload = () => {
       try {
-        const restored = applySnapshot(JSON.parse(rd.result as string));
+        const data = JSON.parse(rd.result as string);
+        pushHistory(); // importing a session replaces the arrangement — keep it undoable
+        const restored = applySnapshot(data);
         relayout();
         if (restored.pos) Object.assign(state.pos, restored.pos);
         renderContent();
         updateStat();
         updateFilterBadge();
+        refreshTableList();
         if (restored.view) {
           Object.assign(state.view, restored.view);
           applyView();

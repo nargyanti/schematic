@@ -1,11 +1,15 @@
 import { el } from "./geometry";
 import { relayout } from "./layout";
 import { softRefKey } from "./metrics";
+import { clearHistory } from "./history";
+import { buildIssuesPanel } from "./issuesPanel";
+import { scheduleMinimap } from "./minimap";
 import { buildDomainPanel, buildEnumPanel, buildFilterPanel, updateStat } from "./panels";
 import { parseDBML } from "./parser";
+import { refreshTableList } from "./tableList";
 import { applySnapshot, loadSession, setCurrentSchema, type RestoredView } from "./persist";
 import { buildShell, renderContent } from "./render";
-import { computeGraph, computeHubs, indexTables, rebuildEdges, resetFilter, state } from "./state";
+import { computeGraph, computeHubs, indexTables, rebuildEdges, resetFilter, state, struckKey } from "./state";
 import { applyView } from "./view";
 
 const svg = () => document.getElementById("svg") as unknown as SVGSVGElement;
@@ -22,12 +26,18 @@ export function update(fresh: boolean): void {
       computeHubs();
       state.collapsed.clear();
       state.focusTable = null;
+      state.pathTo = null;
       state.colQuery = "";
       // Audit marks survive an edit to the schema text — an audit runs for days
       // and a stray keystroke must not wipe it. Only marks for tables that no
       // longer exist are dropped.
       const alive = new Set(state.model.tables.map((t) => t.name));
       for (const n in state.audit) if (!alive.has(n)) delete state.audit[n];
+      // Same for notes and struck columns: keyed by name, so they follow the
+      // table/column through edits and only vanish when it is deleted/renamed.
+      for (const n in state.auditNotes) if (!alive.has(n)) delete state.auditNotes[n];
+      const liveCols = new Set(state.model.tables.flatMap((t) => t.columns.map((c) => struckKey(t.name, c.name))));
+      state.struck.forEach((k) => liveCols.has(k) || state.struck.delete(k));
       state.activeGroups = new Set(state.model.groups.length ? state.model.groups.map((g) => g.id) : ["_"]);
       computeGraph();
       // Drop rejections that no longer name a guess in this schema.
@@ -46,7 +56,9 @@ export function update(fresh: boolean): void {
         computeGraph();
       }
       buildFilterPanel();
+      buildIssuesPanel();
       rebuildEdges();
+      refreshTableList();
     }
     if (!document.getElementById("viewport")) buildShell();
     if (state.model.tables.length === 0) {
@@ -57,6 +69,8 @@ export function update(fresh: boolean): void {
       document.getElementById("viewport")!.setAttribute("transform", "");
       document.getElementById("content")!.appendChild(t);
       document.getElementById("stat")!.textContent = "";
+      clearHistory();
+      scheduleMinimap();
       errBox.classList.remove("show");
       return;
     }
@@ -69,6 +83,7 @@ export function update(fresh: boolean): void {
     }
     renderContent();
     updateStat();
+    if (fresh) clearHistory(); // positions just came from a fresh layout: older snapshots belong to another schema
     errBox.classList.remove("show");
   } catch (e) {
     errBox.textContent = "⚠ " + (e as Error).message;
